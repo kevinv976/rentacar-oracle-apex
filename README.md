@@ -1,5 +1,3 @@
-# rentacar-oracle-apex
-Sistema de gestión para empresa de alquiler de autos, construido con Oracle Database, PL/SQL, ORDS y Oracle APEX. Incluye modelado de datos relacional, API REST completa y aplicación web CRUD.
 # RentaCar — Sistema de Gestión para Empresa de Alquiler de Autos
 
 ![Oracle](https://img.shields.io/badge/Oracle-000000?style=for-the-badge&logo=oracle&logoColor=white)
@@ -8,17 +6,19 @@ Sistema de gestión para empresa de alquiler de autos, construido con Oracle Dat
 ![REST API](https://img.shields.io/badge/REST%20API-000000?style=for-the-badge&logo=json&logoColor=white)
 ![Postman](https://img.shields.io/badge/Postman-000000?style=for-the-badge&logo=postman&logoColor=white)
 
-Proyecto construido sobre Oracle Database y Oracle APEX, que cubre el ciclo completo de una aplicación empresarial: modelado de datos relacional, API REST, e interfaz web de gestión (CRUD).
+Sistema construido sobre Oracle Database y Oracle APEX que resuelve el flujo real de una empresa de alquiler de vehículos: un cliente llega, un cajero lo atiende, se elige un auto disponible, se registra un pago, y se genera una reserva que queda trazable en el sistema. El proyecto cubre las tres capas de una aplicación empresarial construidas de punta a punta: modelo de datos relacional, API REST protegida, e interfaz web de gestión (CRUD).
 
-Este proyecto fue desarrollado como práctica integral de modelado de bases de datos, PL/SQL, ORDS (Oracle REST Data Services) y Oracle APEX, aplicando un caso de negocio real: una empresa que alquila autos.
+Este proyecto fue desarrollado como práctica integral de modelado de bases de datos, PL/SQL, ORDS (Oracle REST Data Services) y Oracle APEX, priorizando decisiones de diseño con criterio de negocio real (no solo cumplir un checklist técnico) y seguridad de acceso a los datos.
 
 ---
 
 ## Tabla de contenido
 
 - [Descripción general](#descripción-general)
+- [Instalación](#instalación)
 - [Modelo de datos](#modelo-de-datos)
 - [Tecnologías utilizadas](#tecnologías-utilizadas)
+- [Seguridad](#seguridad)
 - [API REST](#api-rest)
 - [Aplicación APEX](#aplicación-apex)
 - [Aprendizajes clave](#aprendizajes-clave)
@@ -34,6 +34,30 @@ RentaCar modela el flujo de negocio de una empresa de alquiler de vehículos, do
 2. Modelo físico — definición de tipos de datos, claves primarias/foráneas, y restricciones (`CHECK`, `NOT NULL`)
 3. API REST — exposición de los datos vía ORDS con operaciones CRUD completas
 4. Aplicación web — interfaz de gestión construida en Oracle APEX
+
+---
+
+## Instalación
+
+Los scripts necesarios para reproducir este proyecto están en la carpeta [`/sql`](./sql):
+
+| Archivo | Contenido |
+|---|---|
+| `01_create_tables.sql` | Creación de las 5 tablas con sus constraints |
+| `02_sample_data.sql` | Datos de prueba (autos, cliente, cajero, pagos, reserva) |
+| `03_alter_pagos_monto.sql` | Migración: agrega la columna `monto` a `Pagos` |
+| `04_api_autos_handlers.sql` | Bloques PL/SQL de los handlers REST del módulo `api.autos` |
+| `05_apex_lov_reservas.sql` | Consultas LOV usadas en el formulario de Reservas en APEX |
+| `06_api_reservas_handlers.sql` | Bloques PL/SQL de los handlers REST del módulo `api.reservas` |
+
+### Pasos para levantar el proyecto
+
+1. Ejecutar `01_create_tables.sql` en un esquema de Oracle Database (probado en Oracle APEX / Autonomous Database).
+2. Ejecutar `02_sample_data.sql` para cargar datos de prueba.
+3. En **SQL Workshop → RESTful Services**, crear el módulo `api.autos` con Base Path `/autos/` y configurar los handlers según `04_api_autos_handlers.sql`.
+4. Crear el módulo `api.reservas` con Base Path `/reservas/` siguiendo el mismo patrón (ver sección [API REST](#api-rest)).
+5. En **App Builder**, crear una aplicación nueva y generar páginas tipo *Form* (con *Include Report*) para cada tabla.
+6. En el formulario de Reserva, configurar los 4 ítems de tipo *Select List* usando las consultas de `05_apex_lov_reservas.sql` como *List of Values*.
 
 ---
 
@@ -137,15 +161,31 @@ CREATE TABLE Reserva (
 
 - Oracle Database — motor de base de datos
 - PL/SQL — lógica de negocio en los handlers de la API
-- ORDS (Oracle REST Data Services) — exposición de la API REST
+- ORDS (Oracle REST Data Services) — exposición de la API REST, con módulos `api.autos` y `api.reservas`
 - Oracle APEX — interfaz web de administración (low-code)
 - Postman — pruebas de la API
 
 ---
 
+## Seguridad
+
+La API está protegida mediante un **Privilege Group** de ORDS (`rentacar_priv`), configurado en RESTful Services:
+
+- El módulo `api.autos` requiere autenticación — cualquier solicitud sin credenciales válidas recibe `401 Unauthorized`.
+- El privilegio está asociado a los roles `SQL Developer` y `RESTful Services` del esquema.
+- Esto evita que cualquiera con la URL pueda leer, modificar o eliminar datos sin autenticarse primero.
+
+### Decisión de diseño: DELETE en Reserva
+
+El endpoint de Reserva **no implementa `DELETE`** de forma intencional. En un negocio de alquiler real, una reserva no debería eliminarse por completo — se cancela o se marca con un estado, para preservar el historial de transacciones con fines de auditoría y reportes. Eliminar el registro por completo generaría inconsistencias en reportes históricos (ingresos, ocupación de flota, etc.).
+
+> Mejora futura relacionada: agregar una columna `estado` (`ACTIVA`, `CANCELADA`, `COMPLETADA`) en vez de depender de operaciones destructivas.
+
+---
+
 ## API REST
 
-Construida con RESTful Services de Oracle APEX / ORDS.
+Construida con RESTful Services de Oracle APEX / ORDS. Todos los endpoints de `api.autos` requieren autenticación (ver [Seguridad](#seguridad)).
 
 ### Endpoints — Autos
 
@@ -156,6 +196,34 @@ Construida con RESTful Services de Oracle APEX / ORDS.
 | GET | /autos/{id_placa} | Consulta un auto específico |
 | PUT | /autos/{id_placa} | Actualiza un auto |
 | DELETE | /autos/{id_placa} | Elimina un auto |
+
+### Endpoints — Reservas
+
+Expone el flujo central del negocio: la transacción de alquiler que conecta Cliente, Auto, Cajero y Pago.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | /reservas/todas | Lista todas las reservas |
+| POST | /reservas/todas | Crea una reserva nueva |
+| GET | /reservas/{reserva_id} | Consulta una reserva específica |
+| PUT | /reservas/{reserva_id} | Actualiza una reserva |
+
+### Ejemplo — Crear una reserva
+
+```http
+POST /ords/{workspace}/reservas/todas
+Content-Type: application/json
+
+{
+  "pagos_id": 4,
+  "id_placa": "AB1111",
+  "id_cajero": "8-999-1111",
+  "cliente_id": "8-123-4567",
+  "fecha_salida": "2026-08-01",
+  "fecha_entrega": "2026-08-05",
+  "cargo_tardanza": 0
+}
+```
 
 ### Ejemplo — Crear un auto
 
@@ -260,6 +328,8 @@ ORDER BY pagos_id DESC;
 - Sincronización de metadatos en APEX: cuando el modelo de datos cambia después de crear las páginas, hay que sincronizar las columnas de la región para que la UI las reconozca.
 - Debugging metódico: diagnosticar errores como `ORA-01400` (NULL en columna obligatoria) verificando primero la base de datos directamente antes de asumir que el problema está en la capa de API o UI.
 - UX en formularios de datos relacionales: convertir claves foráneas en selectores legibles (LOV) en vez de exponer IDs técnicos al usuario final.
+- Seguridad de acceso: configurar un Privilege Group en ORDS para exigir autenticación antes de exponer datos sensibles vía API.
+- Criterio de negocio sobre completitud técnica: decidir conscientemente omitir una operación (DELETE en Reserva) cuando no tiene sentido para el dominio del problema, en vez de implementarla solo por seguir un patrón CRUD estándar.
 
 ---
 
@@ -268,7 +338,9 @@ ORDER BY pagos_id DESC;
 - Dashboard de KPIs (autos más rentados, ingresos por mes, ocupación de flota)
 - Validación de fechas de reserva (que `fecha_entrega` sea posterior a `fecha_salida`)
 - Cálculo automático de `cargo_tardanza` mediante trigger
-- Autenticación de usuarios con roles (cajero vs. administrador)
+- Columna `estado` en Reserva para manejar cancelaciones sin borrar registros
+- Extender la protección del Privilege Group al módulo `api.reservas`
+- Roles diferenciados por tipo de usuario (cajero vs. administrador)
 - Historial de mantenimiento de autos como tabla adicional
 
 ---
