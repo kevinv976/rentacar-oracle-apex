@@ -347,4 +347,4 @@ ORDER BY pagos_id DESC;
 
 ## Autor
 
-Proyecto desarrollado como práctica de preparación técnica para roles de Desarrollador Oracle / PL/SQL.
+Proyecto desarrollado como práctica de preparación técnica para roles de Desarrollador Oracle PL/SQL.
